@@ -1,30 +1,24 @@
 #include "PID.h"
 
-/**
- * TODO: Complete the PID class. You may add any additional desired functions.
- */
+#include <cassert>
+#include <vector>
 
-PID::PID() {}
 
-PID::~PID() {}
+using namespace pid_control;
 
-void PID::Init(double Kp_, double Ki_, double Kd_) {
-  /**
-   * TODO: Initialize PID coefficients (and errors, if needed)
-   */
 
-}
+PID::PID(double kp, double ki, double kd) :
+    m_kp(kp), m_ki(ki), m_kd(kd)
+{}
 
-void PID::UpdateError(double cte) {
-  /**
-   * TODO: Update PID errors based on cte.
-   */
+double PID::Apply(double cte)
+{
+    m_totalError += cte;
+    double value = - m_kp * cte - m_ki * m_totalError - m_kd * (cte - m_prevError);
+    m_prevError = cte;
 
-}
+    // Clamp to [-1.0, 1.0]
+    value = value < -1.0 ? -1.0 : (value > 1.0 ? 1.0 : value);
 
-double PID::TotalError() {
-  /**
-   * TODO: Calculate and return the total error
-   */
-  return 0.0;  // TODO: Add your total error calc here!
+    return value;
 }
