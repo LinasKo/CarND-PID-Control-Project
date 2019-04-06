@@ -15,7 +15,6 @@
 using nlohmann::json;
 using std::string;
 
-
 using namespace pid_control;
 
 
@@ -49,7 +48,7 @@ static constexpr double TWIDDLE_TOLERANCE = 0.1;
 static constexpr unsigned ALLOW_ALL_IN_FIRST_N_TICKS = 100u;
 static constexpr double MAX_ALLOWED_CTE = 4.0;
 static constexpr double MIN_ALLOWED_SPEED = 5.0;
-static constexpr unsigned TERMINATE_AFTER_N_TICKS = 1000u;
+static constexpr unsigned TERMINATE_AFTER_N_TICKS = 4000u;
 
 int main()
 {
@@ -58,10 +57,19 @@ int main()
 
     PID pid;
     // Best found params go here:
-    // pid.UpdateParams({1, 0, 1.05279});
+    // pid.UpdateParams({0.1, 0, 0.576562});
     std::vector<double> pidParams = pid.GetParams();
 
     bool enableTwiddle = true;
+
+    if (enableTwiddle)
+    {
+        spdlog::info("Enabling twiddle.");
+    }
+    else
+    {
+        spdlog::info("Twiddle is disabled;");
+    }
 
     Twiddle twiddle(TWIDDLE_TOLERANCE);
     // Set initial twiddle coefficients:
