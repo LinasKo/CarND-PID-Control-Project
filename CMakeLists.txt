@@ -7,7 +7,13 @@ add_definitions(-std=c++11)
 set(CXX_FLAGS "-Wall")
 set(CMAKE_CXX_FLAGS "${CXX_FLAGS}")
 
-set(sources src/PID.cpp src/main.cpp src/Twiddle.cpp)
+set(sources
+    src/PID.cpp
+    src/main.cpp
+    src/Twiddle.cpp
+)
+
+include_directories(src/third-party)
 
 include_directories(/usr/local/include)
 link_directories(/usr/local/lib)

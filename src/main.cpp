@@ -6,6 +6,7 @@
 
 #include <uWS/uWS.h>
 #include "json.hpp"
+#include "spdlog/spdlog.h"
 
 #include "Twiddle.h"
 #include "PID.h"
@@ -42,31 +43,29 @@ string hasData(string s)
     return "";
 }
 
+// Twiddle configuration
 static constexpr double TWIDDLE_TOLERANCE = 0.1;
-static constexpr unsigned TWIDDLE_INCREASE_IGNORE_PERIOD_EVERY_N_CYCLES = 6u;  // 6u == 2 runs per parameter, that is the whole twiddle algorithm.
-static constexpr unsigned TWIDDLE_IGNORE_FIRST_N_TICKS = 200u;
-static constexpr unsigned TWIDDLE_AVERAGE_ERROR_OVER_N_TICKS = 400u;
 
 static constexpr unsigned ALLOW_ALL_IN_FIRST_N_TICKS = 100u;
 static constexpr double MAX_ALLOWED_CTE = 4.0;
 static constexpr double MIN_ALLOWED_SPEED = 5.0;
+static constexpr unsigned TERMINATE_AFTER_N_TICKS = 1000u;
 
 int main()
 {
     uWS::Hub h;
+    spdlog::set_level(spdlog::level::info);
 
     PID pid;
     // Best found params go here:
     // pid.UpdateParams({1, 0, 1.05279});
+    std::vector<double> pidParams = pid.GetParams();
 
     bool enableTwiddle = true;
 
     Twiddle twiddle(TWIDDLE_TOLERANCE);
     // Set initial twiddle coefficients:
     twiddle.SetCoefficients({0.1, 0.1, 0.1});
-
-
-    std::vector<double> pidParams = pid.GetParams();
 
     h.onMessage([&](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode)
     {
@@ -99,75 +98,50 @@ int main()
 
             if (enableTwiddle)
             {
-                static unsigned twiddleTick { 0u };  // Computes how many times telemetry event was received, resets when twiddle is run
-                static unsigned twiddleIgnoreFirstNTicks { TWIDDLE_IGNORE_FIRST_N_TICKS };
+                static unsigned twiddleTick { 0u };  // Computes how many ticks have passed since twiddle was called
 
-                static std::array<double, TWIDDLE_AVERAGE_ERROR_OVER_N_TICKS> errors;
-                static std::array<double, TWIDDLE_AVERAGE_ERROR_OVER_N_TICKS> speeds;
-
-                bool runTwiddleNow = false;
-                double finalError;
-
-                if (twiddleTick >= ALLOW_ALL_IN_FIRST_N_TICKS && (cte > MAX_ALLOWED_CTE || speed < MIN_ALLOWED_SPEED))
+                const bool ranVeryLong = twiddleTick >= TERMINATE_AFTER_N_TICKS;
+                const bool errorTooLarge = cte > MAX_ALLOWED_CTE;
+                const bool gotTooSlow = speed < MIN_ALLOWED_SPEED;
+                if (twiddleTick >= ALLOW_ALL_IN_FIRST_N_TICKS && (ranVeryLong || errorTooLarge || gotTooSlow))
                 {
-                    // Terminate early
-                    std::cout << "Terminating early." << std::endl;
-                    finalError = std::numeric_limits<double>::max();
-                    runTwiddleNow = true;
-                }
-                else if (twiddleTick == twiddleIgnoreFirstNTicks + TWIDDLE_AVERAGE_ERROR_OVER_N_TICKS)
-                {
-                    // Run twiddle normally
-                    const double averageEndError = std::accumulate(errors.begin(), errors.end(), 0.0) / errors.size();
-                    const double averageEndSpeed = std::accumulate(speeds.begin(), speeds.end(), 0.0) / speeds.size();
-                    finalError = averageEndError / (averageEndSpeed + 0.01);
-                    runTwiddleNow = true;
-                }
-
-                if (runTwiddleNow)
-                {
-                    static unsigned twiddleCycle { 0u };  // How many times twiddle was run
+                    // Convert run time to error that twiddle expects
+                    const double twiddleError = std::numeric_limits<unsigned>::max() - twiddleTick;
 
                     const auto prevParams = pid.GetParams();
-                    const bool twiddleDone = twiddle.runOnce(finalError, pidParams);
-                    pid.UpdateParams(pidParams);  // Could be referenced in instead
+                    const bool twiddleDone = twiddle.runOnce(twiddleError, pidParams);
+                    pid.UpdateParams(pidParams);  // Could be a reference instead, maybe
                     if (prevParams == pidParams)
                     {
-                        std::cout << ">>>>> Found better PID params: " << pidParams[0] << ", " << pidParams[1] << ", " << pidParams[2] << std::endl;
+                        spdlog::warn("Found better PID params: {}, {}, {}", pidParams[0], pidParams[1], pidParams[2]);
                     }
                     else
                     {
-                        std::cout << "Trying PID params: " << pidParams[0] << ", " << pidParams[1] << ", " << pidParams[2] << std::endl;
+                        spdlog::info("Trying PID params: {}, {}, {}", pidParams[0], pidParams[1], pidParams[2]);
                     }
 
                     const auto twiddleCoeffs = twiddle.GetCoefficients();
-                    std::cout << "Twiddle coefficients: " << twiddleCoeffs[0] << ", " << twiddleCoeffs[1] << ", " << twiddleCoeffs[2] << std::endl;
+                    spdlog::info("Twiddle coefficients: {}, {}, {}", twiddleCoeffs[0], twiddleCoeffs[1], twiddleCoeffs[2]);
 
                     // Reset simulator
                     const string msg = "42[\"reset\",{}]";
                     ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
 
-
+                    // Maybe terminate Twiddle
+                    if (ranVeryLong)
+                    {
+                        enableTwiddle = false;
+                        spdlog::warn("Managed to run long enough! Terminating Twiddle.");
+                        spdlog::warn("Final params: {}, {}, {}", pidParams[0], pidParams[1], pidParams[2]);
+                    }
                     if (twiddleDone)
                     {
                         enableTwiddle = false;
-                        std::cout << "Twiddle complete. Final params: " << pidParams[0] << ", " << pidParams[1] << ", " << pidParams[2] << std::endl;
-                    }
-
-                    // Increase distance that the car needs to travel before twiddle starts looking at the errors
-                    twiddleCycle++;
-                    if (twiddleCycle % TWIDDLE_INCREASE_IGNORE_PERIOD_EVERY_N_CYCLES)
-                    {
-                        twiddleIgnoreFirstNTicks += TWIDDLE_IGNORE_FIRST_N_TICKS;
+                        spdlog::warn("Twiddle tolerance reached! Terminating Twiddle.");
+                        spdlog::warn("Final params: {}, {}, {}", pidParams[0], pidParams[1], pidParams[2]);
                     }
 
                     twiddleTick = 0u;
-                }
-
-                if (twiddleTick >= twiddleIgnoreFirstNTicks)
-                {
-                    errors[twiddleTick - twiddleIgnoreFirstNTicks] = cte;
-                    speeds[twiddleTick - twiddleIgnoreFirstNTicks] = speed;
                 }
 
                 twiddleTick++;
@@ -176,36 +150,36 @@ int main()
             double steer_value = pid.Apply(cte);
 
             // DEBUG
-            std::cout << "CTE: " << cte << " Steering Value: " << steer_value << " Speed: " << speed << std::endl;
+            spdlog::debug("CTE: {}, Steering Value: {}, Speed: {}", cte, steer_value, speed);
 
             json msgJson;
             msgJson["steering_angle"] = steer_value;
             msgJson["throttle"] = 0.3;
             auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-            // std::cout << msg << std::endl;
+            spdlog::debug("Message: {}", msg);
             ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
     });
 
     h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req)
     {
-        std::cout << "Connected!!!" << std::endl;
+        spdlog::debug("Connected!!!");
     });
 
     h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code, char *message, size_t length)
     {
         ws.close();
-        std::cout << "Disconnected" << std::endl;
+        spdlog::info("Disconnected");
     });
 
     int port = 4567;
     if (h.listen(port))
     {
-        std::cout << "Listening to port " << port << std::endl;
+        spdlog::info("Listening to port {}", port);
     }
     else
     {
-        std::cerr << "Failed to listen to port" << std::endl;
+        spdlog::error("Failed to listen to port");
         return -1;
     }
 
