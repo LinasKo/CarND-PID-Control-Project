@@ -31,7 +31,10 @@ bool Twiddle::runOnce(const double error, std::vector<double>& params)
 	{
 		m_bestParams = params;
 		m_bestError = absError;
-		m_coeffs = std::vector<double>(params.size(), INITIAL_COEFF);
+		if (m_coeffs.size() == 0)
+		{
+			m_coeffs = std::vector<double>(params.size(), INITIAL_COEFF);
+		}
 	}
 
 	switch (m_state)
