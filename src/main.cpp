@@ -43,10 +43,10 @@ string hasData(string s)
 }
 
 // Twiddle configuration
-static constexpr double TWIDDLE_TOLERANCE = 0.1;
+static constexpr double TWIDDLE_TOLERANCE = 0.02;
 
 static constexpr unsigned ALLOW_ALL_IN_FIRST_N_TICKS = 100u;
-static constexpr double MAX_ALLOWED_CTE = 4.0;
+static constexpr double MAX_ALLOWED_CTE = 2.5;
 static constexpr double MIN_ALLOWED_SPEED = 5.0;
 static constexpr unsigned TERMINATE_AFTER_N_TICKS = 4000u;
 
@@ -57,7 +57,7 @@ int main()
 
     PID pid;
     // Best found params go here:
-    // pid.UpdateParams({0.1, 0, 0.576562});
+    // pid.UpdateParams({0.152734, 0, 0.820703});
     std::vector<double> pidParams = pid.GetParams();
 
     bool enableTwiddle = true;

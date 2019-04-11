@@ -60,6 +60,7 @@ bool Twiddle::runOnce(const double error, std::vector<double>& params)
 			{
 				m_bestError = absError;
 				m_coeffs[m_coeffIndex] *= INCREASE_RATE;
+				m_bestParams = params;
 
 				m_coeffIndex = (m_coeffIndex + 1) % m_coeffs.size();
 				m_state = START;
@@ -78,6 +79,7 @@ bool Twiddle::runOnce(const double error, std::vector<double>& params)
 			{
 				m_bestError = absError;
 				m_coeffs[m_coeffIndex] *= INCREASE_RATE;
+				m_bestParams = params;
 
 				m_coeffIndex = (m_coeffIndex + 1) % m_coeffs.size();
 				m_state = START;
